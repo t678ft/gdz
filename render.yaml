@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: telegram-solver-bot
     runtime: node
     plan: free
@@ -12,3 +12,5 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-4.1
+      - key: PUBLIC_BASE_URL
+        sync: false

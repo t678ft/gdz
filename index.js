@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import http from "node:http";
 import OpenAI from "openai";
 import { Telegraf } from "telegraf";
 
@@ -8,6 +9,8 @@ const {
   TELEGRAM_BOT_TOKEN,
   OPENAI_API_KEY,
   OPENAI_MODEL = "gpt-4.1",
+  PUBLIC_BASE_URL,
+  PORT = "3000",
 } = process.env;
 
 if (!TELEGRAM_BOT_TOKEN) {
@@ -18,8 +21,13 @@ if (!OPENAI_API_KEY) {
   throw new Error("Missing OPENAI_API_KEY");
 }
 
+if (!PUBLIC_BASE_URL) {
+  throw new Error("Missing PUBLIC_BASE_URL");
+}
+
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const webhookPath = "/telegram-webhook";
 
 const SYSTEM_PROMPT =
   "You are a strong academic and practical assistant. Solve the user's task carefully. " +
@@ -137,7 +145,52 @@ bot.on("message", async (ctx) => {
   }
 });
 
-bot.launch();
+const server = http.createServer(async (req, res) => {
+  try {
+    if (req.method === "GET" && req.url === "/") {
+      res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("telegram-solver-bot is running");
+      return;
+    }
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+    if (req.method === "POST" && req.url === webhookPath) {
+      const chunks = [];
+
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+
+      const rawBody = Buffer.concat(chunks).toString("utf8");
+      const update = JSON.parse(rawBody);
+
+      await bot.handleUpdate(update);
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+  } catch (error) {
+    console.error(error);
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Internal server error");
+  }
+});
+
+async function start() {
+  server.listen(Number(PORT), "0.0.0.0", async () => {
+    const webhookUrl = `${PUBLIC_BASE_URL.replace(/\/$/, "")}${webhookPath}`;
+    await bot.telegram.setWebhook(webhookUrl);
+    console.log(`Webhook set to ${webhookUrl}`);
+  });
+}
+
+start().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+
+process.once("SIGINT", () => server.close());
+process.once("SIGTERM", () => server.close());
