@@ -139,8 +139,13 @@ bot.on("message", async (ctx) => {
     }
   } catch (error) {
     console.error(error);
+    const errorMessage =
+      error?.response?.data?.error?.message ||
+      error?.error?.message ||
+      error?.message ||
+      "unknown error";
     await ctx.reply(
-      "Не получилось обработать запрос. Проверь ключи, формат сообщения или попробуй ещё раз."
+      `Не получилось обработать запрос. Техническая причина: ${errorMessage}`
     );
   }
 });
